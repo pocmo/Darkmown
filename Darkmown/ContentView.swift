@@ -1,4 +1,14 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
+
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    case auto = "Auto"
+    case light = "Light"
+    case dark = "Dark"
+
+    var id: String { rawValue }
+}
 
 struct ContentView: View {
     @Binding var document: MarkdownDocument
@@ -12,6 +22,35 @@ struct ContentView: View {
     @State private var searchCurrent = 0
     @State private var searchTotal = 0
     @FocusState private var isSearchFieldFocused: Bool
+
+    // Status bar state
+    @State private var isStatusBarVisible = true
+
+    // Appearance mode
+    @State private var appearanceMode: AppearanceMode = .auto
+
+    // Computed stats
+    private var wordCount: Int {
+        let words = document.text.split { $0.isWhitespace || $0.isNewline }
+        return words.count
+    }
+
+    private var characterCount: Int {
+        document.text.count
+    }
+
+    private var readingTime: String {
+        let minutes = max(1, Int(ceil(Double(wordCount) / 200.0)))
+        return minutes == 1 ? "1 min read" : "\(minutes) min read"
+    }
+
+    private var effectiveIsDarkMode: Bool {
+        switch appearanceMode {
+        case .auto: return themeObserver.isDarkMode
+        case .light: return false
+        case .dark: return true
+        }
+    }
 
     private var isDocumentEmpty: Bool {
         let text = document.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -31,28 +70,34 @@ struct ContentView: View {
                     .frame(minWidth: 600, minHeight: 400)
                     .onDrop(of: [.fileURL], delegate: FileDropDelegate(document: $document))
             } else {
-                NavigationSplitView(columnVisibility: sidebarVisibility) {
-                    sidebarContent
-                } detail: {
-                    ZStack(alignment: .top) {
-                        MarkdownWebView(
-                            markdown: document.text,
-                            isDarkMode: themeObserver.isDarkMode,
-                            onCoordinatorReady: { coordinator in
-                                webViewCoordinator = coordinator
-                            }
-                        )
-                        .frame(minWidth: 400, minHeight: 400)
-                        .onDrop(of: [.fileURL], delegate: FileDropDelegate(document: $document))
+                VStack(spacing: 0) {
+                    NavigationSplitView(columnVisibility: sidebarVisibility) {
+                        sidebarContent
+                    } detail: {
+                        ZStack(alignment: .top) {
+                            MarkdownWebView(
+                                markdown: document.text,
+                                isDarkMode: effectiveIsDarkMode,
+                                onCoordinatorReady: { coordinator in
+                                    webViewCoordinator = coordinator
+                                }
+                            )
+                            .frame(minWidth: 400, minHeight: 400)
+                            .onDrop(of: [.fileURL], delegate: FileDropDelegate(document: $document))
 
-                        if isSearchVisible {
-                            searchBar
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                                .zIndex(1)
+                            if isSearchVisible {
+                                searchBar
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                                    .zIndex(1)
+                            }
                         }
                     }
+                    .navigationSplitViewStyle(.balanced)
+
+                    if isStatusBarVisible {
+                        statusBar
+                    }
                 }
-                .navigationSplitViewStyle(.balanced)
             }
         }
         .frame(minWidth: 700, idealWidth: 1000, minHeight: 500, idealHeight: 700)
@@ -76,6 +121,43 @@ struct ContentView: View {
                         Label("Toggle Sidebar", systemImage: "sidebar.left")
                     }
                     .help("Toggle Table of Contents (Cmd+Shift+S)")
+                }
+
+                ToolbarItem(placement: .automatic) {
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isStatusBarVisible.toggle()
+                        }
+                    }) {
+                        Label("Toggle Status Bar", systemImage: "chart.bar.doc.horizontal")
+                    }
+                    .help("Toggle word count status bar")
+                }
+
+                ToolbarItem(placement: .automatic) {
+                    Menu {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Button(action: {
+                                appearanceMode = mode
+                            }) {
+                                if appearanceMode == mode {
+                                    Label(mode.rawValue, systemImage: "checkmark")
+                                } else {
+                                    Text(mode.rawValue)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Appearance", systemImage: appearanceIcon)
+                    }
+                    .help("Switch appearance mode")
+                }
+
+                ToolbarItem(placement: .automatic) {
+                    Button(action: exportHTML) {
+                        Label("Export HTML", systemImage: "square.and.arrow.up")
+                    }
+                    .help("Export as HTML (Cmd+Shift+E)")
                 }
             }
         }
@@ -121,6 +203,12 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .scrollToBottom)) { _ in
             webViewCoordinator?.scrollToBottom()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
+            refreshDocument()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .exportHTML)) { _ in
+            exportHTML()
         }
     }
 
@@ -263,6 +351,92 @@ struct ContentView: View {
                 webViewCoordinator?.scrollToHeading(id: heading.id)
             }
             .navigationTitle("Contents")
+        }
+    }
+
+    // MARK: - Status Bar
+
+    private var statusBar: some View {
+        HStack(spacing: 16) {
+            Label("\(wordCount) words", systemImage: "text.word.spacing")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            Divider()
+                .frame(height: 12)
+
+            Label("\(characterCount) characters", systemImage: "character.cursor.ibeam")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            Divider()
+                .frame(height: 12)
+
+            Label(readingTime, systemImage: "clock")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            Spacer()
+
+            Text(appearanceMode.rawValue)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.secondary.opacity(0.1))
+                )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .top) {
+            Divider()
+        }
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceIcon: String {
+        switch appearanceMode {
+        case .auto: return "circle.lefthalf.filled"
+        case .light: return "sun.max"
+        case .dark: return "moon"
+        }
+    }
+
+    // MARK: - Refresh
+
+    private func refreshDocument() {
+        // Force a re-render by toggling the markdown through the coordinator
+        let currentText = document.text
+        webViewCoordinator?.updateMarkdown(currentText, isDarkMode: effectiveIsDarkMode)
+    }
+
+    // MARK: - Export HTML
+
+    private func exportHTML() {
+        webViewCoordinator?.getRenderedHTML { html in
+            guard let html = html else { return }
+
+            DispatchQueue.main.async {
+                let panel = NSSavePanel()
+                panel.title = "Export HTML"
+                panel.nameFieldStringValue = "document.html"
+                panel.allowedContentTypes = [.html]
+                panel.canCreateDirectories = true
+
+                panel.begin { response in
+                    guard response == .OK, let url = panel.url else { return }
+                    do {
+                        try html.write(to: url, atomically: true, encoding: .utf8)
+                    } catch {
+                        let alert = NSAlert(error: error)
+                        alert.runModal()
+                    }
+                }
+            }
         }
     }
 }

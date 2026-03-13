@@ -155,6 +155,14 @@ struct MarkdownWebView: NSViewRepresentable {
             printOperation.run()
         }
 
+        // MARK: - Export HTML
+
+        func getRenderedHTML(completion: @escaping (String?) -> Void) {
+            webView?.evaluateJavaScript("document.documentElement.outerHTML;") { result, _ in
+                completion(result as? String)
+            }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isLoaded = true
             if let markdown = pendingMarkdown {

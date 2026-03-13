@@ -41,6 +41,21 @@ struct DarkmownApp: App {
                 .keyboardShortcut("g", modifiers: [.command, .shift])
             }
 
+            // File actions
+            CommandGroup(after: .newItem) {
+                Divider()
+
+                Button("Reload Document") {
+                    NotificationCenter.default.post(name: .refreshDocument, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
+                Button("Export HTML...") {
+                    NotificationCenter.default.post(name: .exportHTML, object: nil)
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+            }
+
             // Print
             CommandGroup(replacing: .printItem) {
                 Button("Print...") {
@@ -96,4 +111,6 @@ extension Notification.Name {
     static let zoomReset = Notification.Name("zoomReset")
     static let scrollToTop = Notification.Name("scrollToTop")
     static let scrollToBottom = Notification.Name("scrollToBottom")
+    static let refreshDocument = Notification.Name("refreshDocument")
+    static let exportHTML = Notification.Name("exportHTML")
 }
