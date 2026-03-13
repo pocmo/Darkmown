@@ -25,6 +25,8 @@
             --table-alt-bg: #f6f8fa;
             --hr-color: #d8dee4;
             --heading-color: #1f2328;
+            --search-highlight-bg: rgba(255, 200, 0, 0.4);
+            --search-highlight-active-bg: rgba(255, 150, 0, 0.6);
         }
 
         [data-theme="dark"] {
@@ -40,6 +42,8 @@
             --table-alt-bg: #262626;
             --hr-color: #444c56;
             --heading-color: #f0f6fc;
+            --search-highlight-bg: rgba(255, 200, 0, 0.35);
+            --search-highlight-active-bg: rgba(255, 150, 0, 0.55);
         }
 
         * {
@@ -203,6 +207,32 @@
             text-align: center;
             margin: 1em 0;
         }
+
+        /* Search highlight styles */
+        .search-highlight {
+            background-color: var(--search-highlight-bg);
+            border-radius: 2px;
+        }
+
+        .search-highlight-active {
+            background-color: var(--search-highlight-active-bg);
+            border-radius: 2px;
+            outline: 2px solid var(--search-highlight-active-bg);
+        }
+
+        /* Print styles */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+                max-width: none;
+                padding: 20px;
+            }
+            .search-highlight, .search-highlight-active {
+                background: none !important;
+                outline: none !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -353,6 +383,152 @@
             if (el) {
                 el.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
+        }
+
+        // ---- Search functionality ----
+        var searchState = {
+            highlights: [],
+            currentIndex: -1,
+            query: ''
+        };
+
+        function clearSearchHighlights() {
+            searchState.highlights.forEach(function(span) {
+                var parent = span.parentNode;
+                if (parent) {
+                    parent.replaceChild(document.createTextNode(span.textContent), span);
+                    parent.normalize();
+                }
+            });
+            searchState.highlights = [];
+            searchState.currentIndex = -1;
+            searchState.query = '';
+        }
+
+        function highlightTextNodes(node, query) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                var text = node.textContent;
+                var lowerText = text.toLowerCase();
+                var lowerQuery = query.toLowerCase();
+                var idx = lowerText.indexOf(lowerQuery);
+                if (idx === -1) return;
+
+                var parts = [];
+                var lastIdx = 0;
+                while (idx !== -1) {
+                    if (idx > lastIdx) {
+                        parts.push(document.createTextNode(text.substring(lastIdx, idx)));
+                    }
+                    var span = document.createElement('span');
+                    span.className = 'search-highlight';
+                    span.textContent = text.substring(idx, idx + query.length);
+                    parts.push(span);
+                    searchState.highlights.push(span);
+                    lastIdx = idx + query.length;
+                    idx = lowerText.indexOf(lowerQuery, lastIdx);
+                }
+                if (lastIdx < text.length) {
+                    parts.push(document.createTextNode(text.substring(lastIdx)));
+                }
+
+                var parent = node.parentNode;
+                for (var i = 0; i < parts.length; i++) {
+                    parent.insertBefore(parts[i], node);
+                }
+                parent.removeChild(node);
+            } else if (node.nodeType === Node.ELEMENT_NODE && node.nodeName !== 'SCRIPT' && node.nodeName !== 'STYLE') {
+                // Collect child nodes into array first to avoid live NodeList issues
+                var children = Array.prototype.slice.call(node.childNodes);
+                for (var i = 0; i < children.length; i++) {
+                    highlightTextNodes(children[i], query);
+                }
+            }
+        }
+
+        function performSearch(query) {
+            clearSearchHighlights();
+            if (!query || query.length === 0) {
+                return JSON.stringify({ total: 0, current: 0 });
+            }
+            searchState.query = query;
+            var contentEl = document.getElementById('content');
+            highlightTextNodes(contentEl, query);
+
+            if (searchState.highlights.length > 0) {
+                searchState.currentIndex = 0;
+                searchState.highlights[0].className = 'search-highlight-active';
+                searchState.highlights[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            return JSON.stringify({
+                total: searchState.highlights.length,
+                current: searchState.highlights.length > 0 ? 1 : 0
+            });
+        }
+
+        function searchNext() {
+            if (searchState.highlights.length === 0) {
+                return JSON.stringify({ total: 0, current: 0 });
+            }
+            // Remove active from current
+            searchState.highlights[searchState.currentIndex].className = 'search-highlight';
+            // Move to next (wrap around)
+            searchState.currentIndex = (searchState.currentIndex + 1) % searchState.highlights.length;
+            searchState.highlights[searchState.currentIndex].className = 'search-highlight-active';
+            searchState.highlights[searchState.currentIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return JSON.stringify({
+                total: searchState.highlights.length,
+                current: searchState.currentIndex + 1
+            });
+        }
+
+        function searchPrevious() {
+            if (searchState.highlights.length === 0) {
+                return JSON.stringify({ total: 0, current: 0 });
+            }
+            searchState.highlights[searchState.currentIndex].className = 'search-highlight';
+            searchState.currentIndex = (searchState.currentIndex - 1 + searchState.highlights.length) % searchState.highlights.length;
+            searchState.highlights[searchState.currentIndex].className = 'search-highlight-active';
+            searchState.highlights[searchState.currentIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return JSON.stringify({
+                total: searchState.highlights.length,
+                current: searchState.currentIndex + 1
+            });
+        }
+
+        function clearSearch() {
+            clearSearchHighlights();
+            return JSON.stringify({ total: 0, current: 0 });
+        }
+
+        // ---- Zoom functionality ----
+        var currentZoom = 1.0;
+
+        function zoomIn() {
+            currentZoom = Math.min(currentZoom + 0.1, 3.0);
+            document.body.style.zoom = currentZoom;
+            return currentZoom;
+        }
+
+        function zoomOut() {
+            currentZoom = Math.max(currentZoom - 0.1, 0.5);
+            document.body.style.zoom = currentZoom;
+            return currentZoom;
+        }
+
+        function zoomReset() {
+            currentZoom = 1.0;
+            document.body.style.zoom = currentZoom;
+            return currentZoom;
+        }
+
+        // ---- Scroll functionality ----
+        function scrollToTop() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function scrollToBottom() {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
         }
     </script>
 </body>

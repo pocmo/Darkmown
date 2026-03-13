@@ -30,7 +30,7 @@ struct MarkdownWebView: NSViewRepresentable {
         Coordinator()
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, ObservableObject {
         weak var webView: WKWebView?
         private var isLoaded = false
         private var pendingMarkdown: String?
@@ -69,6 +69,90 @@ struct MarkdownWebView: NSViewRepresentable {
                 .replacingOccurrences(of: "'", with: "\\'")
             let js = "scrollToHeading('\(escapedId)');"
             webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        // MARK: - Search
+
+        func performSearch(_ query: String, completion: ((Int, Int) -> Void)? = nil) {
+            let escaped = query
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+            let js = "performSearch('\(escaped)');"
+            webView?.evaluateJavaScript(js) { result, _ in
+                self.parseSearchResult(result, completion: completion)
+            }
+        }
+
+        func searchNext(completion: ((Int, Int) -> Void)? = nil) {
+            webView?.evaluateJavaScript("searchNext();") { result, _ in
+                self.parseSearchResult(result, completion: completion)
+            }
+        }
+
+        func searchPrevious(completion: ((Int, Int) -> Void)? = nil) {
+            webView?.evaluateJavaScript("searchPrevious();") { result, _ in
+                self.parseSearchResult(result, completion: completion)
+            }
+        }
+
+        func clearSearch() {
+            webView?.evaluateJavaScript("clearSearch();", completionHandler: nil)
+        }
+
+        private func parseSearchResult(_ result: Any?, completion: ((Int, Int) -> Void)?) {
+            guard let jsonString = result as? String,
+                  let data = jsonString.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let total = json["total"] as? Int,
+                  let current = json["current"] as? Int else {
+                completion?(0, 0)
+                return
+            }
+            completion?(current, total)
+        }
+
+        // MARK: - Zoom
+
+        func zoomIn() {
+            webView?.evaluateJavaScript("zoomIn();", completionHandler: nil)
+        }
+
+        func zoomOut() {
+            webView?.evaluateJavaScript("zoomOut();", completionHandler: nil)
+        }
+
+        func zoomReset() {
+            webView?.evaluateJavaScript("zoomReset();", completionHandler: nil)
+        }
+
+        // MARK: - Scroll
+
+        func scrollToTop() {
+            webView?.evaluateJavaScript("scrollToTop();", completionHandler: nil)
+        }
+
+        func scrollToBottom() {
+            webView?.evaluateJavaScript("scrollToBottom();", completionHandler: nil)
+        }
+
+        // MARK: - Print
+
+        func printContent() {
+            guard let webView = webView else { return }
+            let printInfo = NSPrintInfo.shared
+            printInfo.horizontalPagination = .fit
+            printInfo.verticalPagination = .automatic
+            printInfo.isHorizontallyCentered = true
+            printInfo.isVerticallyCentered = false
+            printInfo.topMargin = 36
+            printInfo.bottomMargin = 36
+            printInfo.leftMargin = 36
+            printInfo.rightMargin = 36
+
+            let printOperation = webView.printOperation(with: printInfo)
+            printOperation.showsPrintPanel = true
+            printOperation.showsProgressPanel = true
+            printOperation.run()
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
