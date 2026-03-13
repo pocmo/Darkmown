@@ -206,6 +206,92 @@
         .mermaid {
             text-align: center;
             margin: 1em 0;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background-color 0.2s ease;
+            position: relative;
+        }
+
+        .mermaid:hover {
+            background-color: var(--code-bg);
+        }
+
+        .mermaid-click-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            cursor: pointer;
+        }
+
+        /* Mermaid lightbox */
+        .mermaid-lightbox {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .mermaid-lightbox.visible {
+            opacity: 1;
+        }
+
+        .mermaid-lightbox-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        .mermaid-lightbox-content {
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+            width: 90vw;
+            height: 90vh;
+            border-radius: 12px;
+            background: var(--bg-color);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mermaid-lightbox-content:active {
+            cursor: grabbing;
+        }
+
+        .mermaid-lightbox-content svg {
+            display: block;
+            transform-origin: 0 0;
+        }
+
+        .mermaid-lightbox-hint {
+            position: absolute;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: var(--blockquote-color);
+            background: var(--code-bg);
+            padding: 4px 12px;
+            border-radius: 6px;
+            pointer-events: none;
+            opacity: 0.8;
         }
 
         /* Search highlight styles */
@@ -231,6 +317,9 @@
             .search-highlight, .search-highlight-active {
                 background: none !important;
                 outline: none !important;
+            }
+            .mermaid-lightbox {
+                display: none !important;
             }
         }
     </style>
@@ -368,6 +457,7 @@
                 try {
                     mermaid.render(id, graphDef).then(function(result) {
                         div.innerHTML = result.svg;
+                        attachMermaidClickHandler(div);
                     }).catch(function(err) {
                         console.error('Mermaid render error:', err);
                     });
@@ -529,6 +619,136 @@
 
         function scrollToBottom() {
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        // ---- Mermaid lightbox ----
+        var lightbox = {
+            el: null,
+            content: null,
+            scale: 1,
+            panX: 0,
+            panY: 0,
+            dragging: false,
+            dragStartX: 0,
+            dragStartY: 0,
+            panStartX: 0,
+            panStartY: 0,
+            svgEl: null
+        };
+
+        function createLightbox() {
+            if (lightbox.el) return;
+            var el = document.createElement('div');
+            el.className = 'mermaid-lightbox';
+            el.innerHTML = '<div class="mermaid-lightbox-backdrop"></div>' +
+                '<div class="mermaid-lightbox-content"></div>' +
+                '<div class="mermaid-lightbox-hint">Scroll to zoom · Drag to pan · Esc to close</div>';
+            document.body.appendChild(el);
+            lightbox.el = el;
+            lightbox.content = el.querySelector('.mermaid-lightbox-content');
+
+            el.querySelector('.mermaid-lightbox-backdrop').addEventListener('click', closeLightbox);
+
+            lightbox.content.addEventListener('wheel', function(e) {
+                e.preventDefault();
+                var factor = 1 - e.deltaY * 0.002;
+                lightbox.scale = Math.min(Math.max(lightbox.scale * factor, 0.3), 5);
+                applyLightboxTransform();
+            }, { passive: false });
+
+            lightbox.content.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                lightbox.dragging = true;
+                lightbox.dragStartX = e.clientX;
+                lightbox.dragStartY = e.clientY;
+                lightbox.panStartX = lightbox.panX;
+                lightbox.panStartY = lightbox.panY;
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!lightbox.dragging) return;
+                lightbox.panX = lightbox.panStartX + (e.clientX - lightbox.dragStartX);
+                lightbox.panY = lightbox.panStartY + (e.clientY - lightbox.dragStartY);
+                applyLightboxTransform();
+            });
+
+            document.addEventListener('mouseup', function() {
+                lightbox.dragging = false;
+            });
+
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && lightbox.el && lightbox.el.classList.contains('visible')) {
+                    closeLightbox();
+                }
+            });
+        }
+
+        function applyLightboxTransform() {
+            if (!lightbox.svgEl) return;
+            lightbox.svgEl.style.transform = 'translate(' + lightbox.panX + 'px, ' + lightbox.panY + 'px) scale(' + lightbox.scale + ')';
+        }
+
+        function openLightbox(mermaidDiv) {
+            createLightbox();
+            var svg = mermaidDiv.querySelector('svg');
+            if (!svg) return;
+
+            lightbox.scale = 1;
+            lightbox.panX = 0;
+            lightbox.panY = 0;
+            lightbox.sourceDiv = mermaidDiv;
+
+            // Move the original SVG into the lightbox
+            lightbox.content.innerHTML = '';
+            lightbox.content.appendChild(svg);
+            svg.style.maxWidth = '90vw';
+            svg.style.maxHeight = '85vh';
+            svg.style.transformOrigin = '50% 50%';
+            lightbox.svgEl = svg;
+
+            document.body.style.overflow = 'hidden';
+            lightbox.el.style.display = 'flex';
+            requestAnimationFrame(function() {
+                lightbox.el.classList.add('visible');
+            });
+        }
+
+        function closeLightbox() {
+            if (!lightbox.el) return;
+            lightbox.el.classList.remove('visible');
+            document.body.style.overflow = '';
+            setTimeout(function() {
+                lightbox.el.style.display = 'none';
+                // Return the SVG to its original mermaid div
+                if (lightbox.svgEl && lightbox.sourceDiv) {
+                    lightbox.svgEl.style.maxWidth = '';
+                    lightbox.svgEl.style.maxHeight = '';
+                    lightbox.svgEl.style.transformOrigin = '';
+                    lightbox.svgEl.style.transform = '';
+                    // Insert before the overlay
+                    var overlay = lightbox.sourceDiv.querySelector('.mermaid-click-overlay');
+                    if (overlay) {
+                        lightbox.sourceDiv.insertBefore(lightbox.svgEl, overlay);
+                    } else {
+                        lightbox.sourceDiv.appendChild(lightbox.svgEl);
+                    }
+                }
+                lightbox.content.innerHTML = '';
+                lightbox.svgEl = null;
+                lightbox.sourceDiv = null;
+            }, 200);
+        }
+
+        function attachMermaidClickHandler(div) {
+            if (div.dataset.lightboxAttached) return;
+            div.dataset.lightboxAttached = 'true';
+            var overlay = document.createElement('div');
+            overlay.className = 'mermaid-click-overlay';
+            overlay.addEventListener('click', function(e) {
+                e.stopPropagation();
+                openLightbox(div);
+            });
+            div.appendChild(overlay);
         }
     </script>
 </body>
