@@ -75,6 +75,7 @@
             font-weight: 600;
             line-height: 1.3;
             transition: color 0.3s ease;
+            scroll-margin-top: 16px;
         }
 
         h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border-color); }
@@ -221,9 +222,60 @@
             securityLevel: 'loose'
         });
 
-        // Custom renderer for mermaid code blocks
+        // Slugify helper - converts heading text to a URL-friendly id
+        function slugify(text) {
+            return text
+                .toLowerCase()
+                .replace(/[^\w\s-]/g, '')
+                .replace(/\s+/g, '-')
+                .replace(/^-+|-+$/g, '');
+        }
+
+        // Custom renderer for mermaid code blocks and heading ids
         const renderer = new marked.Renderer();
         const originalCodeRenderer = renderer.code.bind(renderer);
+
+        // Track heading slugs to handle duplicates
+        let headingSlugCounts = {};
+
+        renderer.heading = function(text, level) {
+            // Handle both old API (text, level) and new API ({text, depth})
+            let headingText, headingLevel;
+            if (typeof text === 'object') {
+                headingText = text.text;
+                headingLevel = text.depth;
+            } else {
+                headingText = text;
+                headingLevel = level;
+            }
+
+            // Strip HTML tags for the slug
+            const plainText = headingText.replace(/<[^>]*>/g, '');
+            const slug = slugify(plainText);
+
+            // Handle duplicate slugs
+            const key = plainText.hashCode ? plainText.hashCode() : simpleHash(plainText);
+            if (headingSlugCounts[key] === undefined) {
+                headingSlugCounts[key] = 0;
+            }
+            const count = headingSlugCounts[key];
+            headingSlugCounts[key] = count + 1;
+
+            const id = count === 0 ? slug : slug + '-' + count;
+
+            return '<h' + headingLevel + ' id="' + id + '">' + headingText + '</h' + headingLevel + '>';
+        };
+
+        // Simple hash function for strings (mirrors Swift's String.hashValue behavior for dedup)
+        function simpleHash(str) {
+            var hash = 0;
+            for (var i = 0; i < str.length; i++) {
+                var char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash |= 0;
+            }
+            return hash;
+        }
 
         renderer.code = function(code, language) {
             // Handle both old API (code, language) and new API ({text, lang})
@@ -251,6 +303,9 @@
         let mermaidCounter = 0;
 
         function renderMarkdown(text, isDark) {
+            // Reset heading slug counts for each render
+            headingSlugCounts = {};
+
             // Set theme
             const root = document.documentElement;
             root.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -290,6 +345,14 @@
                     console.error('Mermaid error:', err);
                 }
             });
+        }
+
+        // Smoothly scrolls to a heading by its id attribute
+        function scrollToHeading(id) {
+            var el = document.getElementById(id);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
     </script>
 </body>

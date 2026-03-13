@@ -14,6 +14,17 @@ struct DarkmownApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
+            CommandGroup(after: .sidebar) {
+                Button("Toggle Table of Contents") {
+                    NotificationCenter.default.post(name: .toggleSidebar, object: nil)
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
         }
+        .defaultSize(width: 1000, height: 700)
     }
+}
+
+extension Notification.Name {
+    static let toggleSidebar = Notification.Name("toggleSidebar")
 }

@@ -4,6 +4,7 @@ import WebKit
 struct MarkdownWebView: NSViewRepresentable {
     let markdown: String
     let isDarkMode: Bool
+    var onCoordinatorReady: ((Coordinator) -> Void)?
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -13,6 +14,11 @@ struct MarkdownWebView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         context.coordinator.webView = webView
         context.coordinator.loadTemplate(in: webView)
+
+        DispatchQueue.main.async {
+            onCoordinatorReady?(context.coordinator)
+        }
+
         return webView
     }
 
@@ -53,6 +59,15 @@ struct MarkdownWebView: NSViewRepresentable {
                 .replacingOccurrences(of: "`", with: "\\`")
                 .replacingOccurrences(of: "$", with: "\\$")
             let js = "renderMarkdown(`\(escaped)`, \(isDarkMode));"
+            webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        /// Scrolls the WebView to a heading with the given id attribute.
+        func scrollToHeading(id: String) {
+            let escapedId = id
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+            let js = "scrollToHeading('\(escapedId)');"
             webView?.evaluateJavaScript(js, completionHandler: nil)
         }
 

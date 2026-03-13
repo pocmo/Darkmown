@@ -14,6 +14,8 @@
 		A10001010000000000000005 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002010000000000000005 /* Theme.swift */; };
 		A10001010000000000000006 /* FileDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002010000000000000006 /* FileDropDelegate.swift */; };
 		A10001010000000000000007 /* markdown-template.html in Resources */ = {isa = PBXBuildFile; fileRef = A10002010000000000000007 /* markdown-template.html */; };
+		A10001010000000000000011 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002010000000000000011 /* WelcomeView.swift */; };
+		A10001010000000000000012 /* TableOfContents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10002010000000000000012 /* TableOfContents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +29,8 @@
 		A10002010000000000000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10002010000000000000009 /* Darkmown.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Darkmown.entitlements; sourceTree = "<group>"; };
 		A10002010000000000000010 /* Darkmown.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Darkmown.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10002010000000000000011 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+		A10002010000000000000012 /* TableOfContents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableOfContents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +61,8 @@
 				A10002010000000000000004 /* MarkdownWebView.swift */,
 				A10002010000000000000005 /* Theme.swift */,
 				A10002010000000000000006 /* FileDropDelegate.swift */,
+				A10002010000000000000011 /* WelcomeView.swift */,
+				A10002010000000000000012 /* TableOfContents.swift */,
 				A10002010000000000000008 /* Info.plist */,
 				A10002010000000000000009 /* Darkmown.entitlements */,
 				A10004010000000000000003 /* Resources */,
@@ -155,6 +161,8 @@
 				A10001010000000000000004 /* MarkdownWebView.swift in Sources */,
 				A10001010000000000000005 /* Theme.swift in Sources */,
 				A10001010000000000000006 /* FileDropDelegate.swift in Sources */,
+				A10001010000000000000011 /* WelcomeView.swift in Sources */,
+				A10001010000000000000012 /* TableOfContents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
