@@ -294,6 +294,76 @@
             opacity: 0.8;
         }
 
+        /* Frontmatter styles */
+        .frontmatter {
+            margin-bottom: 24px;
+            padding: 14px 16px;
+            background-color: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .frontmatter-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--blockquote-color);
+            margin-bottom: 10px;
+        }
+
+        .frontmatter-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 6px 12px;
+            align-items: baseline;
+        }
+
+        .frontmatter-key {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--blockquote-color);
+            font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+            white-space: nowrap;
+        }
+
+        .frontmatter-value {
+            font-size: 13px;
+            color: var(--text-color);
+            word-break: break-word;
+            transition: color 0.3s ease;
+        }
+
+        .frontmatter-value.boolean-true {
+            color: #34a853;
+        }
+
+        [data-theme="dark"] .frontmatter-value.boolean-true {
+            color: #81c995;
+        }
+
+        .frontmatter-value.boolean-false {
+            color: #ea4335;
+        }
+
+        [data-theme="dark"] .frontmatter-value.boolean-false {
+            color: #f28b82;
+        }
+
+        .frontmatter-tag {
+            display: inline-block;
+            font-size: 12px;
+            font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            padding: 1px 7px;
+            margin-right: 4px;
+            margin-bottom: 2px;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
         /* Search highlight styles */
         .search-highlight {
             background-color: var(--search-highlight-bg);
@@ -419,6 +489,93 @@
 
         marked.use({ renderer: renderer });
 
+        // ---- Frontmatter parsing ----
+        function parseFrontmatter(text) {
+            if (!text || !text.startsWith('---')) {
+                return { frontmatter: null, body: text };
+            }
+            // Find closing ---
+            var end = text.indexOf('\n---', 3);
+            if (end === -1) {
+                return { frontmatter: null, body: text };
+            }
+            var yamlBlock = text.substring(3, end).trim();
+            var body = text.substring(end + 4).replace(/^\n/, '');
+            var entries = [];
+            var lines = yamlBlock.split('\n');
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i];
+                // Indented line = continuation of previous multiline value
+                if ((line.startsWith(' ') || line.startsWith('\t')) && entries.length > 0) {
+                    var prev = entries[entries.length - 1];
+                    var trimmed = line.trim();
+                    if (trimmed) {
+                        prev.value = prev.value ? prev.value + ' ' + trimmed : trimmed;
+                    }
+                    continue;
+                }
+                var colonIdx = line.indexOf(':');
+                if (colonIdx === -1) continue;
+                var key = line.substring(0, colonIdx).trim();
+                var val = line.substring(colonIdx + 1).trim();
+                if (!key) continue;
+                // Strip YAML block scalar indicators (> or |)
+                if (val === '>' || val === '|' || val === '>-' || val === '|-') {
+                    val = '';
+                }
+                entries.push({ key: key, value: val });
+            }
+            if (entries.length === 0) {
+                return { frontmatter: null, body: text };
+            }
+            return { frontmatter: entries, body: body };
+        }
+
+        function renderFrontmatterHTML(entries) {
+            var html = '<div class="frontmatter">';
+            html += '<div class="frontmatter-title">Frontmatter</div>';
+            html += '<div class="frontmatter-grid">';
+            for (var i = 0; i < entries.length; i++) {
+                var key = entries[i].key;
+                var val = entries[i].value;
+                html += '<div class="frontmatter-key">' + escapeHTML(key) + '</div>';
+                // Detect booleans
+                if (val === 'true') {
+                    html += '<div class="frontmatter-value boolean-true">true</div>';
+                } else if (val === 'false') {
+                    html += '<div class="frontmatter-value boolean-false">false</div>';
+                }
+                // Detect comma-separated short lists (not prose with commas)
+                else if (val.indexOf(',') !== -1 && (function() {
+                    var parts = val.split(',');
+                    // Only treat as tags if every item is short (max ~60 chars)
+                    // and there's no sentence-like content (periods followed by spaces)
+                    return parts.length >= 2
+                        && parts.every(function(p) { return p.trim().length <= 60; })
+                        && val.indexOf('. ') === -1;
+                })()) {
+                    var tags = val.split(',');
+                    var tagHTML = '<div class="frontmatter-value">';
+                    for (var j = 0; j < tags.length; j++) {
+                        var t = tags[j].trim();
+                        if (t) tagHTML += '<span class="frontmatter-tag">' + escapeHTML(t) + '</span>';
+                    }
+                    tagHTML += '</div>';
+                    html += tagHTML;
+                } else {
+                    html += '<div class="frontmatter-value">' + escapeHTML(val) + '</div>';
+                }
+            }
+            html += '</div></div>';
+            return html;
+        }
+
+        function escapeHTML(str) {
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
         let mermaidCounter = 0;
 
         function renderMarkdown(text, isDark) {
@@ -440,9 +597,16 @@
                 securityLevel: 'loose'
             });
 
+            // Parse frontmatter
+            var parsed = parseFrontmatter(text || '');
+            var frontmatterHTML = '';
+            if (parsed.frontmatter) {
+                frontmatterHTML = renderFrontmatterHTML(parsed.frontmatter);
+            }
+
             // Render markdown
             const contentEl = document.getElementById('content');
-            contentEl.innerHTML = marked.parse(text || '');
+            contentEl.innerHTML = frontmatterHTML + marked.parse(parsed.body);
 
             // Apply syntax highlighting
             document.querySelectorAll('pre code').forEach(function(block) {
