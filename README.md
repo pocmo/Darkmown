@@ -2,6 +2,8 @@
 
 A native macOS Markdown viewer with syntax highlighting, Mermaid diagrams, dark mode, table of contents, in-page search, HTML export, and print support.
 
+![](screenshots.png)
+
 ## Features
 
 - **Syntax Highlighting** — Code blocks rendered with highlight.js, with theme-matched light/dark styles
