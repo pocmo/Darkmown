@@ -16,6 +16,7 @@ A native macOS Markdown viewer with syntax highlighting, Mermaid diagrams, dark 
 - **Zoom Controls** — Zoom in, out, and reset for comfortable reading
 - **Status Bar** — Word count, character count, and estimated reading time
 - **Drag & Drop** — Open Markdown files by dropping them onto the window
+- **Frontmatter Display** — YAML frontmatter rendered as a styled metadata card with boolean highlighting and tag pills
 - **GFM Support** — Full GitHub Flavored Markdown including tables, task lists, and line breaks
 
 ## Requirements
