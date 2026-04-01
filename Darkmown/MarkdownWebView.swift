@@ -4,6 +4,7 @@ import WebKit
 struct MarkdownWebView: NSViewRepresentable {
     let markdown: String
     let isDarkMode: Bool
+    var fileURL: URL?
     var onCoordinatorReady: ((Coordinator) -> Void)?
 
     func makeNSView(context: Context) -> WKWebView {
@@ -13,7 +14,8 @@ struct MarkdownWebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.setValue(false, forKey: "drawsBackground")
         context.coordinator.webView = webView
-        context.coordinator.loadTemplate(in: webView)
+        context.coordinator.fileURL = fileURL
+        context.coordinator.loadTemplate(in: webView, fileURL: fileURL)
 
         DispatchQueue.main.async {
             onCoordinatorReady?(context.coordinator)
@@ -23,6 +25,7 @@ struct MarkdownWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.fileURL = fileURL
         context.coordinator.updateMarkdown(markdown, isDarkMode: isDarkMode)
     }
 
@@ -32,11 +35,12 @@ struct MarkdownWebView: NSViewRepresentable {
 
     class Coordinator: NSObject, WKNavigationDelegate, ObservableObject {
         weak var webView: WKWebView?
+        var fileURL: URL?
         private var isLoaded = false
         private var pendingMarkdown: String?
         private var pendingIsDark: Bool = false
 
-        func loadTemplate(in webView: WKWebView) {
+        func loadTemplate(in webView: WKWebView, fileURL: URL?) {
             webView.navigationDelegate = self
             guard let templateURL = Bundle.main.url(forResource: "markdown-template", withExtension: "html") else {
                 return
@@ -54,12 +58,71 @@ struct MarkdownWebView: NSViewRepresentable {
         }
 
         private func renderMarkdown(_ markdown: String, isDarkMode: Bool) {
-            let escaped = markdown
+            let processed = embedLocalImages(in: markdown)
+            let escaped = processed
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "`", with: "\\`")
                 .replacingOccurrences(of: "$", with: "\\$")
             let js = "renderMarkdown(`\(escaped)`, \(isDarkMode));"
             webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        /// Replaces relative image paths in markdown with base64 data URIs
+        /// so that WKWebView can display them without file system access.
+        private func embedLocalImages(in markdown: String) -> String {
+            guard let fileDir = fileURL?.deletingLastPathComponent() else {
+                print("[Darkmown] embedLocalImages: fileURL is nil, skipping")
+                return markdown
+            }
+            print("[Darkmown] embedLocalImages: fileDir = \(fileDir.path)")
+
+            let pattern = #"!\[([^\]]*)\]\(([^)]+)\)"#
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return markdown }
+
+            let nsString = markdown as NSString
+            let matches = regex.matches(in: markdown, range: NSRange(location: 0, length: nsString.length))
+
+            var result = markdown
+            // Process matches in reverse so replacements don't shift ranges
+            for match in matches.reversed() {
+                let pathRange = match.range(at: 2)
+                let path = nsString.substring(with: pathRange)
+
+                // Skip absolute URLs and data URIs
+                if path.hasPrefix("http://") || path.hasPrefix("https://") || path.hasPrefix("data:") {
+                    continue
+                }
+
+                let imageURL = fileDir.appendingPathComponent(path)
+                print("[Darkmown] Trying to load image: \(imageURL.path)")
+                guard let data = try? Data(contentsOf: imageURL) else {
+                    print("[Darkmown] Failed to read image at: \(imageURL.path)")
+                    continue
+                }
+                print("[Darkmown] Successfully loaded image: \(data.count) bytes")
+
+                let ext = imageURL.pathExtension.lowercased()
+                let mimeType: String
+                switch ext {
+                case "png": mimeType = "image/png"
+                case "jpg", "jpeg": mimeType = "image/jpeg"
+                case "gif": mimeType = "image/gif"
+                case "svg": mimeType = "image/svg+xml"
+                case "webp": mimeType = "image/webp"
+                default: mimeType = "application/octet-stream"
+                }
+
+                let base64 = data.base64EncodedString()
+                let dataURI = "data:\(mimeType);base64,\(base64)"
+
+                let fullRange = match.range(at: 0)
+                let altRange = match.range(at: 1)
+                let altText = nsString.substring(with: altRange)
+                let replacement = "![\(altText)](\(dataURI))"
+                result = (result as NSString).replacingCharacters(in: fullRange, with: replacement)
+            }
+
+            return result
         }
 
         /// Scrolls the WebView to a heading with the given id attribute.

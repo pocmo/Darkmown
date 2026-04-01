@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct DarkmownApp: App {
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
-            ContentView(document: file.$document)
+            ContentView(document: file.$document, fileURL: file.fileURL)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -54,6 +54,11 @@ struct DarkmownApp: App {
                     NotificationCenter.default.post(name: .exportHTML, object: nil)
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+
+                Button("View Source") {
+                    NotificationCenter.default.post(name: .showRawMarkdown, object: nil)
+                }
+                .keyboardShortcut("u", modifiers: .command)
             }
 
             // Print
@@ -113,4 +118,5 @@ extension Notification.Name {
     static let scrollToBottom = Notification.Name("scrollToBottom")
     static let refreshDocument = Notification.Name("refreshDocument")
     static let exportHTML = Notification.Name("exportHTML")
+    static let showRawMarkdown = Notification.Name("showRawMarkdown")
 }

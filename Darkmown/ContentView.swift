@@ -12,6 +12,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @Binding var document: MarkdownDocument
+    let fileURL: URL?
     @StateObject private var themeObserver = ThemeObserver()
     @State private var isSidebarVisible = true
     @State private var webViewCoordinator: MarkdownWebView.Coordinator?
@@ -25,6 +26,9 @@ struct ContentView: View {
 
     // Status bar state
     @State private var isStatusBarVisible = true
+
+    // Raw markdown overlay
+    @State private var isRawMarkdownVisible = false
 
     // Appearance mode
     @State private var appearanceMode: AppearanceMode = .auto
@@ -64,151 +68,181 @@ struct ContentView: View {
     }
 
     var body: some View {
-        Group {
-            if isDocumentEmpty {
-                WelcomeView()
-                    .frame(minWidth: 600, minHeight: 400)
-                    .onDrop(of: [.fileURL], delegate: FileDropDelegate(document: $document))
-            } else {
-                VStack(spacing: 0) {
-                    NavigationSplitView(columnVisibility: sidebarVisibility) {
-                        sidebarContent
-                    } detail: {
-                        ZStack(alignment: .top) {
-                            MarkdownWebView(
-                                markdown: document.text,
-                                isDarkMode: effectiveIsDarkMode,
-                                onCoordinatorReady: { coordinator in
-                                    webViewCoordinator = coordinator
-                                }
-                            )
-                            .frame(minWidth: 400, minHeight: 400)
-                            .onDrop(of: [.fileURL], delegate: FileDropDelegate(document: $document))
+        let base = mainContent
+            .frame(minWidth: 700, idealWidth: 1000, minHeight: 500, idealHeight: 700)
+            .toolbar { toolbarContent }
+        return applyNotificationHandlers(to: base)
+    }
 
-                            if isSearchVisible {
-                                searchBar
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                                    .zIndex(1)
-                            }
-                        }
-                    }
-                    .navigationSplitViewStyle(.balanced)
+    private func applyNotificationHandlers<V: View>(to view: V) -> some View {
+        view
+            .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+                withAnimation(.easeInOut(duration: 0.25)) { isSidebarVisible.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleSearch)) { _ in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isSearchVisible { dismissSearch() }
+                    else { isSearchVisible = true; isSearchFieldFocused = true }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findNext)) { _ in
+                if isSearchVisible { findNext() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findPrevious)) { _ in
+                if isSearchVisible { findPrevious() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .printDocument)) { _ in
+                webViewCoordinator?.printContent()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in
+                webViewCoordinator?.zoomIn()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in
+                webViewCoordinator?.zoomOut()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomReset)) { _ in
+                webViewCoordinator?.zoomReset()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scrollToTop)) { _ in
+                webViewCoordinator?.scrollToTop()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scrollToBottom)) { _ in
+                webViewCoordinator?.scrollToBottom()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
+                refreshDocument()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .exportHTML)) { _ in
+                exportHTML()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showRawMarkdown)) { _ in
+                withAnimation(.easeInOut(duration: 0.2)) { isRawMarkdownVisible.toggle() }
+            }
+    }
 
-                    if isStatusBarVisible {
-                        statusBar
-                    }
+    // MARK: - Main Content
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if isDocumentEmpty {
+            WelcomeView()
+                .frame(minWidth: 600, minHeight: 400)
+                .onDrop(of: [.fileURL], delegate: FileDropDelegate(document: $document))
+        } else {
+            VStack(spacing: 0) {
+                NavigationSplitView(columnVisibility: sidebarVisibility) {
+                    sidebarContent
+                } detail: {
+                    detailContent
+                }
+                .navigationSplitViewStyle(.balanced)
+
+                if isStatusBarVisible {
+                    statusBar
                 }
             }
         }
-        .frame(minWidth: 700, idealWidth: 1000, minHeight: 500, idealHeight: 700)
-        .toolbar {
+    }
+
+    private var detailContent: some View {
+        ZStack(alignment: .top) {
+            MarkdownWebView(
+                markdown: document.text,
+                isDarkMode: effectiveIsDarkMode,
+                fileURL: fileURL,
+                onCoordinatorReady: { coordinator in
+                    webViewCoordinator = coordinator
+                }
+            )
+            .frame(minWidth: 400, minHeight: 400)
+            .onDrop(of: [.fileURL], delegate: FileDropDelegate(document: $document))
+
+            if isSearchVisible {
+                searchBar
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(1)
+            }
+
+            if isRawMarkdownVisible {
+                rawMarkdownOverlay
+                    .transition(.opacity)
+                    .zIndex(2)
+            }
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .automatic) {
+            Button(action: {
+                NSDocumentController.shared.openDocument(nil)
+            }) {
+                Label("Open", systemImage: "doc")
+            }
+            .help("Open a Markdown file")
+        }
+
+        if !isDocumentEmpty {
             ToolbarItem(placement: .automatic) {
                 Button(action: {
-                    NSDocumentController.shared.openDocument(nil)
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isSidebarVisible.toggle()
+                    }
                 }) {
-                    Label("Open", systemImage: "doc")
+                    Label("Toggle Sidebar", systemImage: "sidebar.left")
                 }
-                .help("Open a Markdown file")
+                .help("Toggle Table of Contents (Cmd+Shift+S)")
             }
 
-            if !isDocumentEmpty {
-                ToolbarItem(placement: .automatic) {
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isSidebarVisible.toggle()
-                        }
-                    }) {
-                        Label("Toggle Sidebar", systemImage: "sidebar.left")
+            ToolbarItem(placement: .automatic) {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isStatusBarVisible.toggle()
                     }
-                    .help("Toggle Table of Contents (Cmd+Shift+S)")
+                }) {
+                    Label("Toggle Status Bar", systemImage: "chart.bar.doc.horizontal")
                 }
+                .help("Toggle word count status bar")
+            }
 
-                ToolbarItem(placement: .automatic) {
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isStatusBarVisible.toggle()
-                        }
-                    }) {
-                        Label("Toggle Status Bar", systemImage: "chart.bar.doc.horizontal")
-                    }
-                    .help("Toggle word count status bar")
-                }
-
-                ToolbarItem(placement: .automatic) {
-                    Menu {
-                        ForEach(AppearanceMode.allCases) { mode in
-                            Button(action: {
-                                appearanceMode = mode
-                            }) {
-                                if appearanceMode == mode {
-                                    Label(mode.rawValue, systemImage: "checkmark")
-                                } else {
-                                    Text(mode.rawValue)
-                                }
+            ToolbarItem(placement: .automatic) {
+                Menu {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Button(action: {
+                            appearanceMode = mode
+                        }) {
+                            if appearanceMode == mode {
+                                Label(mode.rawValue, systemImage: "checkmark")
+                            } else {
+                                Text(mode.rawValue)
                             }
                         }
-                    } label: {
-                        Label("Appearance", systemImage: appearanceIcon)
                     }
-                    .help("Switch appearance mode")
+                } label: {
+                    Label("Appearance", systemImage: appearanceIcon)
                 }
+                .help("Switch appearance mode")
+            }
 
-                ToolbarItem(placement: .automatic) {
-                    Button(action: exportHTML) {
-                        Label("Export HTML", systemImage: "square.and.arrow.up")
+            ToolbarItem(placement: .automatic) {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isRawMarkdownVisible.toggle()
                     }
-                    .help("Export as HTML (Cmd+Shift+E)")
+                }) {
+                    Label("View Source", systemImage: "doc.plaintext")
                 }
+                .help("View raw Markdown (Cmd+U)")
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
-            withAnimation(.easeInOut(duration: 0.25)) {
-                isSidebarVisible.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleSearch)) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                if isSearchVisible {
-                    dismissSearch()
-                } else {
-                    isSearchVisible = true
-                    isSearchFieldFocused = true
+
+            ToolbarItem(placement: .automatic) {
+                Button(action: exportHTML) {
+                    Label("Export HTML", systemImage: "square.and.arrow.up")
                 }
+                .help("Export as HTML (Cmd+Shift+E)")
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .findNext)) { _ in
-            if isSearchVisible {
-                findNext()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .findPrevious)) { _ in
-            if isSearchVisible {
-                findPrevious()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .printDocument)) { _ in
-            webViewCoordinator?.printContent()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in
-            webViewCoordinator?.zoomIn()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in
-            webViewCoordinator?.zoomOut()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zoomReset)) { _ in
-            webViewCoordinator?.zoomReset()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .scrollToTop)) { _ in
-            webViewCoordinator?.scrollToTop()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .scrollToBottom)) { _ in
-            webViewCoordinator?.scrollToBottom()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
-            refreshDocument()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .exportHTML)) { _ in
-            exportHTML()
         }
     }
 
@@ -393,6 +427,46 @@ struct ContentView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .top) {
             Divider()
+        }
+    }
+
+    // MARK: - Raw Markdown Overlay
+
+    private var rawMarkdownOverlay: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                Text(document.text)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+            }
+            .background(.regularMaterial)
+
+            HStack(spacing: 8) {
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(document.text, forType: .string)
+                }) {
+                    Label("Copy All", systemImage: "doc.on.doc")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isRawMarkdownVisible = false
+                    }
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Close (Cmd+U)")
+            }
+            .padding(12)
         }
     }
 
